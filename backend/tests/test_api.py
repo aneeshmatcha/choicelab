@@ -4,6 +4,21 @@ def test_seeded_experiment_and_analytics(client):
     experiment = experiments.json()[0]
     assert experiment["response_count"] == 180
     assert len(experiment["variations"]) == 2
+    assert experiment["slug"] == "travel-planner-experience"
+
+    unauthorized = client.get(f"/api/experiments/{experiment['id']}/analytics")
+    assert unauthorized.status_code == 401
+
+    invalid_login = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "wrong"}
+    )
+    assert invalid_login.status_code == 401
+
+    login = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "admin123"}
+    )
+    assert login.status_code == 200
+    assert login.json()["authenticated"] is True
 
     analytics = client.get(f"/api/experiments/{experiment['id']}/analytics")
     assert analytics.status_code == 200
@@ -11,6 +26,10 @@ def test_seeded_experiment_and_analytics(client):
     assert result["total_responses"] == 180
     assert sum(choice["count"] for choice in result["choices"]) == 180
     assert 0 <= result["p_value"] <= 1
+
+    logout = client.post("/api/auth/logout")
+    assert logout.status_code == 200
+    assert client.get(f"/api/experiments/{experiment['id']}/analytics").status_code == 401
 
 
 def test_create_response(client):
@@ -46,4 +65,3 @@ def test_rejects_unrelated_variation(client):
         },
     )
     assert response.status_code == 404
-

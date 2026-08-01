@@ -1,47 +1,76 @@
 import random
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Experiment, Response, Variation
 
 
 FEEDBACK_A = [
-    "The layout feels familiar and easy to scan.",
-    "I like seeing the details before the action.",
-    "The neutral colors feel trustworthy.",
-    "It takes less effort to understand.",
+    "The day-by-day timeline made the whole trip easy to understand.",
+    "I liked comparing time, cost, and travel distance in one place.",
+    "The structured itinerary felt practical and ready to use.",
+    "I could quickly see what the full day would feel like.",
 ]
 FEEDBACK_B = [
-    "The primary action is much clearer.",
-    "This version feels modern and focused.",
-    "The visual hierarchy helped me decide quickly.",
-    "I noticed the important information immediately.",
+    "Exploring places directly on the map felt more inspiring.",
+    "The neighborhood filters made discovery much easier.",
+    "I liked saving places before committing to an itinerary.",
+    "The map made distances and nearby options immediately clear.",
 ]
+
+EXPERIMENT_TITLE = "Plan a three-day city escape"
+EXPERIMENT_DESCRIPTION = (
+    "Explore both interactive travel-planning concepts. Which experience would you prefer "
+    "for discovering places and building a realistic trip?"
+)
 
 
 def seed_database(db: Session) -> None:
-    if db.scalar(select(func.count(Experiment.id))) > 0:
+    existing = db.scalar(select(Experiment).order_by(Experiment.id))
+    if existing:
+        existing.slug = "travel-planner-experience"
+        existing.title = EXPERIMENT_TITLE
+        existing.description = EXPERIMENT_DESCRIPTION
+        variations = sorted(existing.variations, key=lambda item: item.label)
+        if len(variations) == 2:
+            variations[0].title = "Itinerary Studio"
+            variations[0].description = (
+                "A structured day-by-day workspace with schedules, travel time, budgets, "
+                "and editable activity cards."
+            )
+            variations[0].accent_color = "#5b63d3"
+            variations[1].title = "Discovery Map"
+            variations[1].description = (
+                "A visual neighborhood explorer with map pins, live filters, saved places, "
+                "and a flexible trip collection."
+            )
+            variations[1].accent_color = "#df6b47"
+            for response in existing.responses:
+                if response.qualitative_feedback:
+                    pool = FEEDBACK_B if response.selected_variation_id == variations[1].id else FEEDBACK_A
+                    response.qualitative_feedback = pool[response.id % len(pool)]
+        db.commit()
         return
 
     experiment = Experiment(
-        slug="checkout-clarity",
-        title="Checkout page clarity",
-        description="Which checkout summary makes the next step feel clearer and more trustworthy?",
+        slug="travel-planner-experience",
+        title=EXPERIMENT_TITLE,
+        description=EXPERIMENT_DESCRIPTION,
         status="active",
     )
     variation_a = Variation(
         label="A",
-        title="Classic summary",
-        description="A familiar order summary with neutral styling and details presented before the primary action.",
-        accent_color="#7467e8",
+        title="Itinerary Studio",
+        description="A structured day-by-day workspace with schedules, travel time, budgets, and editable activity cards.",
+        accent_color="#5b63d3",
     )
     variation_b = Variation(
         label="B",
-        title="Focused checkout",
-        description="A streamlined summary with stronger hierarchy, reassurance cues, and a prominent primary action.",
-        accent_color="#ef6d4e",
+        title="Discovery Map",
+        description="A visual neighborhood explorer with map pins, live filters, saved places, and a flexible trip collection.",
+        accent_color="#df6b47",
     )
     experiment.variations = [variation_a, variation_b]
     db.add(experiment)
@@ -81,4 +110,3 @@ def seed_database(db: Session) -> None:
             )
         )
     db.commit()
-

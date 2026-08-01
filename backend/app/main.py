@@ -1,8 +1,10 @@
 import csv
 import io
+import os
+import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response as FastAPIResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -13,12 +15,20 @@ from .database import Base, SessionLocal, engine, get_db
 from .models import Experiment, Response, Variation
 from .schemas import (
     AnalyticsOut,
+    AuthOut,
     ExperimentOut,
+    LoginRequest,
     RecentResponse,
     ResponseCreate,
     ResponseOut,
 )
 from .seed import seed_database
+
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_COOKIE = "choicelab_admin_session"
+ACTIVE_ADMIN_SESSIONS: set[str] = set()
 
 
 @asynccontextmanager
@@ -48,9 +58,48 @@ def experiment_query():
     return select(Experiment).options(selectinload(Experiment.variations))
 
 
+def require_admin(request: Request) -> str:
+    token = request.cookies.get(ADMIN_COOKIE)
+    if not token or token not in ACTIVE_ADMIN_SESSIONS:
+        raise HTTPException(status_code=401, detail="Admin login required")
+    return token
+
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.post("/api/auth/login", response_model=AuthOut)
+def login(payload: LoginRequest, response: FastAPIResponse):
+    username_matches = secrets.compare_digest(payload.username, ADMIN_USERNAME)
+    password_matches = secrets.compare_digest(payload.password, ADMIN_PASSWORD)
+    if not username_matches or not password_matches:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = secrets.token_urlsafe(32)
+    ACTIVE_ADMIN_SESSIONS.add(token)
+    response.set_cookie(
+        key=ADMIN_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=8 * 60 * 60,
+    )
+    return AuthOut(authenticated=True, username=ADMIN_USERNAME)
+
+
+@app.post("/api/auth/logout", response_model=AuthOut)
+def logout(response: FastAPIResponse, request: Request):
+    token = request.cookies.get(ADMIN_COOKIE)
+    if token:
+        ACTIVE_ADMIN_SESSIONS.discard(token)
+    response.delete_cookie(ADMIN_COOKIE)
+    return AuthOut(authenticated=False, username=ADMIN_USERNAME)
+
+
+@app.get("/api/auth/session", response_model=AuthOut)
+def admin_session(_: str = Depends(require_admin)):
+    return AuthOut(authenticated=True, username=ADMIN_USERNAME)
 
 
 @app.get("/api/experiments", response_model=list[ExperimentOut])
@@ -99,7 +148,11 @@ def create_response(
 
 
 @app.get("/api/experiments/{experiment_id}/analytics", response_model=AnalyticsOut)
-def get_analytics(experiment_id: int, db: Session = Depends(get_db)):
+def get_analytics(
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
     experiment = db.get(Experiment, experiment_id)
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
@@ -146,7 +199,11 @@ def get_analytics(experiment_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/experiments/{experiment_id}/responses.csv")
-def export_responses(experiment_id: int, db: Session = Depends(get_db)):
+def export_responses(
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
     responses = db.scalars(
         select(Response)
         .options(selectinload(Response.selected_variation))
