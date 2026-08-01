@@ -10,6 +10,8 @@ ChoiceLab is a full-stack product experimentation platform for running A/B tests
 - Automatic decision-latency measurement
 - Confidence and qualitative-feedback collection
 - Admin dashboard with preference, latency, and segment analytics
+- Executive Reports page with statistical findings, feedback themes, printing, and data export
+- Persistent Settings page controlling study status, order randomization, confidence, feedback, and participant profile collection
 - Exact binomial significance testing and Wilson confidence intervals
 - Deterministic seed dataset with 180 realistic interaction records
 - CSV export and documented REST API

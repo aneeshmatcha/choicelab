@@ -66,3 +66,11 @@ export interface ResponsePayload {
   age_range: "18-24" | "25-34" | "35-44" | "45+" | "prefer-not-to-say";
 }
 
+export interface StudySettings {
+  studyActive: boolean;
+  randomizeVariations: boolean;
+  collectConfidence: boolean;
+  collectFeedback: boolean;
+  collectDemographics: boolean;
+  workspaceLabel: string;
+}

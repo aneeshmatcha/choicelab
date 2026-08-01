@@ -4,12 +4,13 @@ import { Logo } from "./Logo";
 
 interface ShellProps {
   children: ReactNode;
-  active: "dashboard" | "experiment";
-  onNavigate: (view: "dashboard" | "experiment") => void;
+  active: "dashboard" | "experiment" | "reports" | "settings";
+  onNavigate: (view: "dashboard" | "experiment" | "reports" | "settings") => void;
   onLogout: () => void;
+  workspaceLabel: string;
 }
 
-export function Shell({ children, active, onNavigate, onLogout }: ShellProps) {
+export function Shell({ children, active, onNavigate, onLogout, workspaceLabel }: ShellProps) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -21,11 +22,11 @@ export function Shell({ children, active, onNavigate, onLogout }: ShellProps) {
           <button className={active === "experiment" ? "active" : ""} onClick={() => onNavigate("experiment")}>
             <FlaskConical size={19} /> Live experiment
           </button>
-          <button disabled><BarChart3 size={19} /> Reports</button>
-          <button disabled><Settings size={19} /> Settings</button>
+          <button className={active === "reports" ? "active" : ""} onClick={() => onNavigate("reports")}><BarChart3 size={19} /> Reports</button>
+          <button className={active === "settings" ? "active" : ""} onClick={() => onNavigate("settings")}><Settings size={19} /> Settings</button>
         </nav>
         <div className="sidebar-note">
-          <span className="pulse" /> Demo workspace
+          <span className="pulse" /> {workspaceLabel || "ChoiceLab workspace"}
           <strong>180 responses seeded</strong>
         </div>
         <button className="sidebar-logout" onClick={onLogout}><LogOut size={16} /> Sign out</button>
