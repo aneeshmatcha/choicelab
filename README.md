@@ -13,7 +13,8 @@ Each stage compares two working UI concepts. The research-program dashboard comb
 
 ## Product features
 
-- Four interactive UI studies with functional controls
+- Four interactive UI studies with functional controls and deliberately contrasting design systems
+- Detailed comparison briefs explaining each concept's strategy, interaction model, and research hypothesis
 - Participant study switcher and shareable experiment URLs
 - A/B preference, first-click, and task-completion test types
 - Automatic decision-time and interaction-count tracking
@@ -21,6 +22,7 @@ Each stage compares two working UI concepts. The research-program dashboard comb
 - Protected multi-experiment admin workspace
 - Experiment creation, duplication, launch, pause, and draft workflows
 - Cross-experiment customer-journey comparison dashboard
+- A/B outcome scorecards that compare stated preference with task success, ease, and decision speed
 - Per-experiment statistical reports and device segmentation
 - Exact binomial significance testing and Wilson confidence intervals
 - CSV export including behavioral and outcome fields

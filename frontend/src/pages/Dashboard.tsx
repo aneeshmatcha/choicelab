@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowRight, CheckCircle2, Clock3, Gauge, MousePointerClick, Users } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, CheckCircle2, Clock3, Gauge, GitCompareArrows, MousePointerClick, Trophy, Users } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -30,6 +30,11 @@ export function Dashboard({ experiment, analytics, onTryExperiment }: DashboardP
     value: choice.count,
     percentage: choice.percentage,
   }));
+  const choiceA = analytics.choices[0];
+  const choiceB = analytics.choices[1];
+  const preferenceWinner = choiceA.percentage > choiceB.percentage ? "A" : "B";
+  const successWinner = choiceA.task_success_rate > choiceB.task_success_rate ? "A" : "B";
+  const evidenceConverges = preferenceWinner === successWinner;
 
   return (
     <div className="page dashboard-page">
@@ -124,6 +129,16 @@ export function Dashboard({ experiment, analytics, onTryExperiment }: DashboardP
           <p className="association-note">Association, not causation. Device differences may reflect participant mix or context.</p>
           <div className="behavior-note"><MousePointerClick size={15} /><span><strong>{analytics.average_interactions} interactions per response</strong>Choice alone does not show usability; task success and effort provide the outcome context.</span></div>
         </article>
+      </section>
+
+      <section className="panel ab-scorecard">
+        <div className="panel-heading"><div><p className="eyebrow">A/B OUTCOME SCORECARD</p><h2>Preference is only one part of the result</h2><p>Compare what participants said with what they were actually able to do.</p></div><span className={`convergence-badge ${evidenceConverges ? "aligned" : "conflict"}`}><GitCompareArrows size={14} /> {evidenceConverges ? "Signals align" : "Signals conflict"}</span></div>
+        <div className="scorecard-head"><span>Outcome</span><span className="score-a"><i>A</i><b>{experiment.variations.find((variation) => variation.label === "A")?.title}</b></span><span className="score-b"><i>B</i><b>{experiment.variations.find((variation) => variation.label === "B")?.title}</b></span><span>Difference</span></div>
+        <div className="scorecard-row"><span><b>Preference</b><small>Stated choice</small></span><strong className={preferenceWinner === "A" ? "winner-a" : ""}>{choiceA.percentage}%</strong><strong className={preferenceWinner === "B" ? "winner-b" : ""}>{choiceB.percentage}%</strong><span className={choiceB.percentage >= choiceA.percentage ? "delta-b" : "delta-a"}>{Math.abs(choiceB.percentage - choiceA.percentage).toFixed(1)} pts {choiceB.percentage >= choiceA.percentage ? "toward B" : "toward A"}</span></div>
+        <div className="scorecard-row"><span><b>Task success</b><small>Behavioral outcome</small></span><strong className={successWinner === "A" ? "winner-a" : ""}>{choiceA.task_success_rate}%</strong><strong className={successWinner === "B" ? "winner-b" : ""}>{choiceB.task_success_rate}%</strong><span className={choiceB.task_success_rate >= choiceA.task_success_rate ? "delta-b" : "delta-a"}>{Math.abs(choiceB.task_success_rate - choiceA.task_success_rate).toFixed(1)} pts {choiceB.task_success_rate >= choiceA.task_success_rate ? "toward B" : "toward A"}</span></div>
+        <div className="scorecard-row"><span><b>Ease score</b><small>Perceived effort</small></span><strong className={choiceA.average_ease_score > choiceB.average_ease_score ? "winner-a" : ""}>{choiceA.average_ease_score}/5</strong><strong className={choiceB.average_ease_score >= choiceA.average_ease_score ? "winner-b" : ""}>{choiceB.average_ease_score}/5</strong><span className={choiceB.average_ease_score >= choiceA.average_ease_score ? "delta-b" : "delta-a"}>{Math.abs(choiceB.average_ease_score - choiceA.average_ease_score).toFixed(2)} points</span></div>
+        <div className="scorecard-row"><span><b>Decision time</b><small>Lower is faster</small></span><strong className={choiceA.average_latency_ms < choiceB.average_latency_ms ? "winner-a" : ""}>{formatSeconds(choiceA.average_latency_ms)}</strong><strong className={choiceB.average_latency_ms <= choiceA.average_latency_ms ? "winner-b" : ""}>{formatSeconds(choiceB.average_latency_ms)}</strong><span className={choiceB.average_latency_ms <= choiceA.average_latency_ms ? "delta-b" : "delta-a"}>{formatSeconds(Math.abs(choiceB.average_latency_ms - choiceA.average_latency_ms))} faster</span></div>
+        <div className={`scorecard-verdict ${evidenceConverges ? "aligned" : "conflict"}`}><Trophy size={18} /><div><strong>{evidenceConverges ? `Variation ${preferenceWinner} leads both preference and successful task completion.` : `Participants prefer Variation ${preferenceWinner}, but Variation ${successWinner} produces more successful tasks.`}</strong><span>{evidenceConverges ? "The stated and behavioral evidence point in the same direction; validate the magnitude in the next research round." : "Do not ship on preference alone. Investigate why the liked concept underperforms on the actual task."}</span></div></div>
       </section>
 
       <section className="panel responses-panel">
