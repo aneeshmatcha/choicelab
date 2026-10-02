@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -18,6 +18,11 @@ class Experiment(Base):
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    test_type: Mapped[str] = mapped_column(String(40), default="preference")
+    template_key: Mapped[str] = mapped_column(String(40), default="travel")
+    task_prompt: Mapped[str] = mapped_column(
+        Text, default="Explore both concepts, then choose the experience you prefer."
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     variations: Mapped[list["Variation"]] = relationship(
@@ -50,6 +55,9 @@ class Response(Base):
     anonymous_id: Mapped[str] = mapped_column(String(80), index=True)
     decision_latency_ms: Mapped[int] = mapped_column(Integer)
     confidence_score: Mapped[int] = mapped_column(Integer)
+    task_completed: Mapped[bool] = mapped_column(Boolean, default=True)
+    ease_score: Mapped[int] = mapped_column(Integer, default=4)
+    interaction_count: Mapped[int] = mapped_column(Integer, default=1)
     qualitative_feedback: Mapped[str] = mapped_column(Text, default="")
     device_type: Mapped[str] = mapped_column(String(20))
     experience_level: Mapped[str] = mapped_column(String(30))
@@ -58,4 +66,3 @@ class Response(Base):
 
     experiment: Mapped[Experiment] = relationship(back_populates="responses")
     selected_variation: Mapped[Variation] = relationship()
-

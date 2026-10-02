@@ -1,4 +1,4 @@
-import type { Analytics, Experiment, ResponsePayload } from "./types";
+import type { Analytics, Experiment, ExperimentCreate, ProgramSummary, ResponsePayload } from "./types";
 
 const API_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
@@ -24,6 +24,14 @@ export const api = {
   logout: () => request<{ authenticated: boolean }>("/api/auth/logout", { method: "POST" }),
   session: () => request<{ authenticated: boolean; username: string }>("/api/auth/session"),
   listExperiments: () => request<Experiment[]>("/api/experiments"),
+  listAdminExperiments: () => request<Experiment[]>("/api/admin/experiments"),
+  createExperiment: (payload: ExperimentCreate) => request<Experiment>("/api/admin/experiments", {
+    method: "POST", body: JSON.stringify(payload),
+  }),
+  updateExperiment: (id: number, payload: Partial<Pick<Experiment, "title" | "description" | "status" | "task_prompt">>) =>
+    request<Experiment>(`/api/admin/experiments/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  duplicateExperiment: (id: number) => request<Experiment>(`/api/admin/experiments/${id}/duplicate`, { method: "POST" }),
+  getProgramSummary: () => request<ProgramSummary>("/api/admin/program-summary"),
   getExperiment: (id: number) => request<Experiment>(`/api/experiments/${id}`),
   getAnalytics: (id: number) => request<Analytics>(`/api/experiments/${id}/analytics`),
   submitResponse: (id: number, payload: ResponsePayload) =>

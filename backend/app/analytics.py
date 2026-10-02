@@ -32,6 +32,12 @@ def choice_metrics(responses: list[Response]) -> list[ChoiceMetric]:
             average_latency_ms=round(
                 sum(r.decision_latency_ms for r in grouped[label]) / len(grouped[label]), 1
             ) if grouped[label] else 0,
+            task_success_rate=round(
+                sum(r.task_completed for r in grouped[label]) / len(grouped[label]) * 100, 1
+            ) if grouped[label] else 0,
+            average_ease_score=round(
+                sum(r.ease_score for r in grouped[label]) / len(grouped[label]), 2
+            ) if grouped[label] else 0,
         )
         for label in ("A", "B")
     ]
@@ -66,4 +72,3 @@ def significance(responses: list[Response]) -> tuple[float, tuple[float, float],
     p_value = float(binomtest(b_count, total, p=0.5).pvalue)
     interval = wilson_interval(b_count, total)
     return (p_value, interval, p_value < 0.05)
-

@@ -2,12 +2,13 @@ import csv
 import io
 import os
 import secrets
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response as FastAPIResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session, selectinload
 
 from .analytics import choice_metrics, device_metrics, significance
@@ -16,8 +17,12 @@ from .models import Experiment, Response, Variation
 from .schemas import (
     AnalyticsOut,
     AuthOut,
+    ExperimentCreate,
     ExperimentOut,
+    ExperimentUpdate,
     LoginRequest,
+    ProgramExperimentMetric,
+    ProgramSummaryOut,
     RecentResponse,
     ResponseCreate,
     ResponseOut,
@@ -34,6 +39,7 @@ ACTIVE_ADMIN_SESSIONS: set[str] = set()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_experiment_columns()
     with SessionLocal() as db:
         seed_database(db)
     yield
@@ -41,8 +47,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="ChoiceLab API",
-    description="Behavioral experimentation and product preference analytics.",
-    version="1.0.0",
+    description="End-to-end product research, task outcomes, and interface comparison analytics.",
+    version="2.0.0",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -56,6 +62,47 @@ app.add_middleware(
 
 def experiment_query():
     return select(Experiment).options(selectinload(Experiment.variations))
+
+
+def ensure_experiment_columns() -> None:
+    """Keep existing portfolio databases usable without requiring Alembic."""
+    existing = {column["name"] for column in inspect(engine).get_columns("experiments")}
+    additions = {
+        "test_type": "VARCHAR(40) NOT NULL DEFAULT 'preference'",
+        "template_key": "VARCHAR(40) NOT NULL DEFAULT 'travel'",
+        "task_prompt": "TEXT NOT NULL DEFAULT 'Explore both concepts, then choose the experience you prefer.'",
+    }
+    with engine.begin() as connection:
+        for name, definition in additions.items():
+            if name not in existing:
+                connection.exec_driver_sql(f"ALTER TABLE experiments ADD COLUMN {name} {definition}")
+
+    response_existing = {column["name"] for column in inspect(engine).get_columns("responses")}
+    response_additions = {
+        "task_completed": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "ease_score": "INTEGER NOT NULL DEFAULT 4",
+        "interaction_count": "INTEGER NOT NULL DEFAULT 1",
+    }
+    with engine.begin() as connection:
+        for name, definition in response_additions.items():
+            if name not in response_existing:
+                connection.exec_driver_sql(f"ALTER TABLE responses ADD COLUMN {name} {definition}")
+
+
+def unique_slug(db: Session, title: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:80] or "experiment"
+    candidate = base
+    suffix = 2
+    while db.scalar(select(Experiment.id).where(Experiment.slug == candidate)):
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def experiment_output(experiment: Experiment) -> ExperimentOut:
+    return ExperimentOut.model_validate(experiment).model_copy(
+        update={"response_count": len(experiment.responses)}
+    )
 
 
 def require_admin(request: Request) -> str:
@@ -104,13 +151,88 @@ def admin_session(_: str = Depends(require_admin)):
 
 @app.get("/api/experiments", response_model=list[ExperimentOut])
 def list_experiments(db: Session = Depends(get_db)):
-    experiments = db.scalars(experiment_query().order_by(Experiment.created_at.desc())).all()
-    return [
-        ExperimentOut.model_validate(experiment).model_copy(
-            update={"response_count": len(experiment.responses)}
-        )
-        for experiment in experiments
-    ]
+    experiments = db.scalars(
+        experiment_query().where(Experiment.status == "active").order_by(Experiment.id)
+    ).all()
+    return [experiment_output(experiment) for experiment in experiments]
+
+
+@app.get("/api/admin/experiments", response_model=list[ExperimentOut])
+def list_admin_experiments(
+    db: Session = Depends(get_db), _: str = Depends(require_admin)
+):
+    experiments = db.scalars(experiment_query().order_by(Experiment.id)).all()
+    return [experiment_output(experiment) for experiment in experiments]
+
+
+@app.post("/api/admin/experiments", response_model=ExperimentOut, status_code=201)
+def create_experiment(
+    payload: ExperimentCreate,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    labels = {variation.label for variation in payload.variations}
+    if labels != {"A", "B"}:
+        raise HTTPException(status_code=400, detail="Experiments require one A and one B variation")
+    experiment = Experiment(
+        slug=unique_slug(db, payload.title),
+        title=payload.title,
+        description=payload.description,
+        status=payload.status,
+        test_type=payload.test_type,
+        template_key=payload.template_key,
+        task_prompt=payload.task_prompt,
+        variations=[Variation(**variation.model_dump()) for variation in payload.variations],
+    )
+    db.add(experiment)
+    db.commit()
+    experiment = db.scalar(experiment_query().where(Experiment.id == experiment.id))
+    return experiment_output(experiment)
+
+
+@app.patch("/api/admin/experiments/{experiment_id}", response_model=ExperimentOut)
+def update_experiment(
+    experiment_id: int,
+    payload: ExperimentUpdate,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    experiment = db.scalar(experiment_query().where(Experiment.id == experiment_id))
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(experiment, field, value)
+    db.commit()
+    db.refresh(experiment)
+    return experiment_output(experiment)
+
+
+@app.post("/api/admin/experiments/{experiment_id}/duplicate", response_model=ExperimentOut, status_code=201)
+def duplicate_experiment(
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    source = db.scalar(experiment_query().where(Experiment.id == experiment_id))
+    if not source:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    duplicate = Experiment(
+        slug=unique_slug(db, f"{source.title} copy"),
+        title=f"{source.title} (Copy)",
+        description=source.description,
+        status="draft",
+        test_type=source.test_type,
+        template_key=source.template_key,
+        task_prompt=source.task_prompt,
+        variations=[
+            Variation(label=v.label, title=v.title, description=v.description, accent_color=v.accent_color)
+            for v in source.variations
+        ],
+    )
+    db.add(duplicate)
+    db.commit()
+    duplicate = db.scalar(experiment_query().where(Experiment.id == duplicate.id))
+    return experiment_output(duplicate)
 
 
 @app.get("/api/experiments/{experiment_id}", response_model=ExperimentOut)
@@ -118,9 +240,7 @@ def get_experiment(experiment_id: int, db: Session = Depends(get_db)):
     experiment = db.scalar(experiment_query().where(Experiment.id == experiment_id))
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
-    return ExperimentOut.model_validate(experiment).model_copy(
-        update={"response_count": len(experiment.responses)}
-    )
+    return experiment_output(experiment)
 
 
 @app.post(
@@ -167,6 +287,9 @@ def get_analytics(
     p_value, interval, is_significant = significance(responses)
     average_latency = sum(r.decision_latency_ms for r in responses) / len(responses) if responses else 0
     average_confidence = sum(r.confidence_score for r in responses) / len(responses) if responses else 0
+    task_success_rate = sum(r.task_completed for r in responses) / len(responses) * 100 if responses else 0
+    average_ease = sum(r.ease_score for r in responses) / len(responses) if responses else 0
+    average_interactions = sum(r.interaction_count for r in responses) / len(responses) if responses else 0
     b_percentage = sum(r.selected_variation.label == "B" for r in responses) / len(responses) * 100 if responses else 0
     summary = (
         f"Variation B leads by {abs(b_percentage - 50):.1f} percentage points; "
@@ -177,6 +300,9 @@ def get_analytics(
         total_responses=len(responses),
         average_latency_ms=round(average_latency, 1),
         average_confidence=round(average_confidence, 2),
+        task_success_rate=round(task_success_rate, 1),
+        average_ease_score=round(average_ease, 2),
+        average_interactions=round(average_interactions, 1),
         choices=choice_metrics(responses),
         p_value=round(p_value, 6),
         confidence_interval=[round(interval[0] * 100, 1), round(interval[1] * 100, 1)],
@@ -188,6 +314,9 @@ def get_analytics(
                 id=response.id,
                 selected_label=response.selected_variation.label,
                 confidence_score=response.confidence_score,
+                task_completed=response.task_completed,
+                ease_score=response.ease_score,
+                interaction_count=response.interaction_count,
                 decision_latency_ms=response.decision_latency_ms,
                 device_type=response.device_type,
                 feedback=response.qualitative_feedback,
@@ -195,6 +324,47 @@ def get_analytics(
             )
             for response in responses[:6]
         ],
+    )
+
+
+@app.get("/api/admin/program-summary", response_model=ProgramSummaryOut)
+def get_program_summary(
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    experiments = db.scalars(experiment_query().order_by(Experiment.id)).all()
+    metrics = []
+    all_responses = []
+    for experiment in experiments:
+        responses = list(db.scalars(
+            select(Response)
+            .options(selectinload(Response.selected_variation))
+            .where(Response.experiment_id == experiment.id)
+        ).all())
+        all_responses.extend(responses)
+        choices = choice_metrics(responses)
+        winner = max(choices, key=lambda choice: choice.percentage)
+        _, _, is_significant = significance(responses)
+        metrics.append(ProgramExperimentMetric(
+            experiment_id=experiment.id,
+            title=experiment.title,
+            template_key=experiment.template_key,
+            status=experiment.status,
+            total_responses=len(responses),
+            winning_label=winner.label,
+            winning_percentage=winner.percentage,
+            task_success_rate=round(sum(r.task_completed for r in responses) / len(responses) * 100, 1) if responses else 0,
+            average_ease_score=round(sum(r.ease_score for r in responses) / len(responses), 2) if responses else 0,
+            average_latency_ms=round(sum(r.decision_latency_ms for r in responses) / len(responses), 1) if responses else 0,
+            is_significant=is_significant,
+        ))
+    return ProgramSummaryOut(
+        total_experiments=len(experiments),
+        total_responses=len(all_responses),
+        overall_success_rate=round(sum(r.task_completed for r in all_responses) / len(all_responses) * 100, 1) if all_responses else 0,
+        average_ease_score=round(sum(r.ease_score for r in all_responses) / len(all_responses), 2) if all_responses else 0,
+        evidence_ready=sum(metric.is_significant for metric in metrics),
+        experiments=metrics,
     )
 
 
@@ -213,13 +383,15 @@ def export_responses(
     writer = csv.writer(output)
     writer.writerow([
         "response_id", "anonymous_id", "selected_variation", "decision_latency_ms",
-        "confidence_score", "device_type", "experience_level", "age_range",
+        "confidence_score", "task_completed", "ease_score", "interaction_count",
+        "device_type", "experience_level", "age_range",
         "qualitative_feedback", "created_at",
     ])
     for response in responses:
         writer.writerow([
             response.id, response.anonymous_id, response.selected_variation.label,
-            response.decision_latency_ms, response.confidence_score, response.device_type,
+            response.decision_latency_ms, response.confidence_score, response.task_completed,
+            response.ease_score, response.interaction_count, response.device_type,
             response.experience_level, response.age_range, response.qualitative_feedback,
             response.created_at.isoformat(),
         ])

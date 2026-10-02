@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowRight, CheckCircle2, Clock3, MessageSquareText, Users } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, CheckCircle2, Clock3, Gauge, MousePointerClick, Users } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -64,15 +64,15 @@ export function Dashboard({ experiment, analytics, onTryExperiment }: DashboardP
         </article>
         <article className="metric-card">
           <div className="metric-icon green"><CheckCircle2 size={19} /></div>
-          <span>Average confidence</span>
-          <strong>{analytics.average_confidence}<em>/ 5</em></strong>
-          <small>Self-reported certainty</small>
+          <span>Task success</span>
+          <strong>{analytics.task_success_rate}%</strong>
+          <small>Participants completing the task</small>
         </article>
         <article className="metric-card">
-          <div className="metric-icon amber"><MessageSquareText size={19} /></div>
-          <span>Feedback coverage</span>
-          <strong>72%</strong>
-          <small>Participants left a comment</small>
+          <div className="metric-icon amber"><Gauge size={19} /></div>
+          <span>Ease score</span>
+          <strong>{analytics.average_ease_score}<em>/ 5</em></strong>
+          <small>{analytics.average_interactions} interactions on average</small>
         </article>
       </section>
 
@@ -122,6 +122,7 @@ export function Dashboard({ experiment, analytics, onTryExperiment }: DashboardP
             </BarChart>
           </ResponsiveContainer>
           <p className="association-note">Association, not causation. Device differences may reflect participant mix or context.</p>
+          <div className="behavior-note"><MousePointerClick size={15} /><span><strong>{analytics.average_interactions} interactions per response</strong>Choice alone does not show usability; task success and effort provide the outcome context.</span></div>
         </article>
       </section>
 
@@ -143,4 +144,3 @@ export function Dashboard({ experiment, analytics, onTryExperiment }: DashboardP
     </div>
   );
 }
-

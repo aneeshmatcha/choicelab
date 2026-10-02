@@ -7,106 +7,127 @@ from sqlalchemy.orm import Session
 from .models import Experiment, Response, Variation
 
 
-FEEDBACK_A = [
-    "The day-by-day timeline made the whole trip easy to understand.",
-    "I liked comparing time, cost, and travel distance in one place.",
-    "The structured itinerary felt practical and ready to use.",
-    "I could quickly see what the full day would feel like.",
+STUDIES = [
+    {
+        "slug": "roamly-onboarding-setup",
+        "title": "Set up a personalized travel profile",
+        "description": "Compare two onboarding patterns for helping a new Roamly user reach a useful first recommendation.",
+        "status": "active", "test_type": "task-completion", "template_key": "onboarding",
+        "task_prompt": "Tell Roamly that you enjoy food and culture, set a mid-range budget, and finish your profile.",
+        "responses": 84, "b_probability": 0.60,
+        "variations": [
+            ("A", "Setup Checklist", "A flexible workspace where travelers can complete profile steps in any order.", "#5b63d3"),
+            ("B", "Guided Setup", "A focused question-by-question flow with visible progress and instant recommendations.", "#df6b47"),
+        ],
+        "feedback": {"A": ["The checklist let me control the setup order.", "I liked seeing every profile task at once."], "B": ["The guided questions felt quick and clear.", "Seeing a recommendation at the end felt rewarding."]},
+    },
+    {
+        "slug": "travel-planner-experience",
+        "title": "Build the first version of a Rome trip",
+        "description": "Compare two Roamly planning workspaces for turning recommendations into a realistic three-day itinerary.",
+        "status": "active", "test_type": "task-completion", "template_key": "travel",
+        "task_prompt": "Save a Rome activity, inspect a daily route, and decide which planner makes the trip easiest to organize.",
+        "responses": 180, "b_probability": 0.63,
+        "variations": [
+            ("A", "Itinerary Studio", "A day-by-day workspace with schedules, travel time, budgets, and editable activity cards.", "#5b63d3"),
+            ("B", "Discovery Map", "A neighborhood explorer with map pins, filters, saved places, and flexible trip building.", "#df6b47"),
+        ],
+        "feedback": {"A": ["The daily structure made the trip easy to understand.", "I liked seeing time and budget together."], "B": ["The map made exploring feel natural.", "Saving nearby places was quick and inspiring."]},
+    },
+    {
+        "slug": "checkout-flow-clarity",
+        "title": "Book the trip with confidence",
+        "description": "Compare two Roamly booking flows for reviewing traveler details, protection, and the final trip total.",
+        "status": "active", "test_type": "task-completion", "template_key": "checkout",
+        "task_prompt": "Add trip protection, verify the total, and locate the final booking action in both concepts.",
+        "responses": 96, "b_probability": 0.57,
+        "variations": [
+            ("A", "One-page Booking", "Traveler details, protection, payment, and trip review presented in one compact workspace.", "#316f65"),
+            ("B", "Guided Booking", "A calm three-step booking flow that reveals one decision at a time and confirms progress.", "#d96a45"),
+        ],
+        "feedback": {"A": ["Everything was visible without moving between steps.", "The order total stayed easy to check."], "B": ["The steps reduced the amount I had to process.", "The progress indicator made checkout feel safer."]},
+    },
+    {
+        "slug": "pricing-page-decision",
+        "title": "Choose a Roamly membership",
+        "description": "Compare two membership pages for choosing travel benefits without losing important plan details.",
+        "status": "active", "test_type": "first-click", "template_key": "pricing",
+        "task_prompt": "Find the plan that includes price alerts and shared trips, then compare monthly and annual billing.",
+        "responses": 72, "b_probability": 0.67,
+        "variations": [
+            ("A", "Benefit Comparison", "A detailed membership matrix designed for methodical feature-by-feature comparison.", "#5b63d3"),
+            ("B", "Trip-based Recommendations", "Goal-based plan cards that highlight the membership best suited to each traveler.", "#df6b47"),
+        ],
+        "feedback": {"A": ["The table made feature differences explicit.", "I could verify every limitation before choosing."], "B": ["The recommended plan was immediately clear.", "The cards made pricing much less overwhelming."]},
+    },
 ]
-FEEDBACK_B = [
-    "Exploring places directly on the map felt more inspiring.",
-    "The neighborhood filters made discovery much easier.",
-    "I liked saving places before committing to an itinerary.",
-    "The map made distances and nearby options immediately clear.",
-]
-
-EXPERIMENT_TITLE = "Plan a three-day city escape"
-EXPERIMENT_DESCRIPTION = (
-    "Explore both interactive travel-planning concepts. Which experience would you prefer "
-    "for discovering places and building a realistic trip?"
-)
 
 
-def seed_database(db: Session) -> None:
-    existing = db.scalar(select(Experiment).order_by(Experiment.id))
-    if existing:
-        existing.slug = "travel-planner-experience"
-        existing.title = EXPERIMENT_TITLE
-        existing.description = EXPERIMENT_DESCRIPTION
-        variations = sorted(existing.variations, key=lambda item: item.label)
-        if len(variations) == 2:
-            variations[0].title = "Itinerary Studio"
-            variations[0].description = (
-                "A structured day-by-day workspace with schedules, travel time, budgets, "
-                "and editable activity cards."
-            )
-            variations[0].accent_color = "#5b63d3"
-            variations[1].title = "Discovery Map"
-            variations[1].description = (
-                "A visual neighborhood explorer with map pins, live filters, saved places, "
-                "and a flexible trip collection."
-            )
-            variations[1].accent_color = "#df6b47"
-            for response in existing.responses:
-                if response.qualitative_feedback:
-                    pool = FEEDBACK_B if response.selected_variation_id == variations[1].id else FEEDBACK_A
-                    response.qualitative_feedback = pool[response.id % len(pool)]
-        db.commit()
-        return
-
-    experiment = Experiment(
-        slug="travel-planner-experience",
-        title=EXPERIMENT_TITLE,
-        description=EXPERIMENT_DESCRIPTION,
-        status="active",
-    )
-    variation_a = Variation(
-        label="A",
-        title="Itinerary Studio",
-        description="A structured day-by-day workspace with schedules, travel time, budgets, and editable activity cards.",
-        accent_color="#5b63d3",
-    )
-    variation_b = Variation(
-        label="B",
-        title="Discovery Map",
-        description="A visual neighborhood explorer with map pins, live filters, saved places, and a flexible trip collection.",
-        accent_color="#df6b47",
-    )
-    experiment.variations = [variation_a, variation_b]
-    db.add(experiment)
+def upsert_study(db: Session, spec: dict) -> Experiment:
+    experiment = db.scalar(select(Experiment).where(Experiment.slug == spec["slug"]))
+    if not experiment:
+        experiment = Experiment(slug=spec["slug"])
+        db.add(experiment)
+    for field in ("title", "description", "status", "test_type", "template_key", "task_prompt"):
+        setattr(experiment, field, spec[field])
     db.flush()
+    by_label = {variation.label: variation for variation in experiment.variations}
+    for label, title, description, accent_color in spec["variations"]:
+        variation = by_label.get(label)
+        if not variation:
+            variation = Variation(label=label)
+            experiment.variations.append(variation)
+        variation.title = title
+        variation.description = description
+        variation.accent_color = accent_color
+    db.flush()
+    return experiment
 
-    rng = random.Random(42)
+
+def seed_responses(db: Session, experiment: Experiment, spec: dict, seed: int) -> None:
+    if experiment.responses:
+        rng = random.Random(seed)
+        for response in experiment.responses:
+            selected_label = response.selected_variation.label
+            if response.interaction_count <= 1:
+                response.task_completed = rng.random() < (0.88 if selected_label == "B" else 0.78)
+                response.ease_score = min(5, max(1, round(rng.gauss(4.2 if selected_label == "B" else 3.6, 0.8))))
+                response.interaction_count = max(1, round(rng.gauss(5 if selected_label == "B" else 7, 2)))
+        return
+    rng = random.Random(seed)
+    variations = {variation.label: variation for variation in experiment.variations}
     devices = ["desktop", "desktop", "desktop", "mobile", "mobile", "tablet"]
     experience_levels = ["new", "intermediate", "intermediate", "expert"]
     age_ranges = ["18-24", "25-34", "25-34", "35-44", "45+"]
-
-    for index in range(180):
+    count = spec["responses"]
+    for index in range(count):
         device = rng.choice(devices)
         experience = rng.choice(experience_levels)
-        choose_b_probability = 0.63
-        if device == "mobile":
-            choose_b_probability += 0.05
-        if experience == "expert":
-            choose_b_probability -= 0.04
-        selected = variation_b if rng.random() < choose_b_probability else variation_a
-        baseline = 6200 if device == "desktop" else 7600 if device == "mobile" else 7000
-        latency = max(900, int(rng.gauss(baseline, 1900)))
-        confidence = min(5, max(1, round(rng.gauss(4 if selected == variation_b else 3.5, 0.8))))
-        feedback_pool = FEEDBACK_B if selected == variation_b else FEEDBACK_A
-        feedback = rng.choice(feedback_pool) if rng.random() < 0.72 else ""
-        db.add(
-            Response(
-                experiment_id=experiment.id,
-                selected_variation_id=selected.id,
-                anonymous_id=f"seed-participant-{index + 1:03d}",
-                decision_latency_ms=latency,
-                confidence_score=confidence,
-                qualitative_feedback=feedback,
-                device_type=device,
-                experience_level=experience,
-                age_range=rng.choice(age_ranges),
-                created_at=datetime.now(timezone.utc) - timedelta(hours=180 - index),
-            )
-        )
+        probability = spec["b_probability"] + (0.04 if device == "mobile" else 0)
+        selected_label = "B" if rng.random() < probability else "A"
+        selected = variations[selected_label]
+        baseline = 6400 if device == "desktop" else 7800 if device == "mobile" else 7100
+        latency = max(900, int(rng.gauss(baseline, 1850)))
+        confidence = min(5, max(1, round(rng.gauss(4 if selected_label == "B" else 3.6, 0.75))))
+        success_probability = 0.88 if selected_label == "B" else 0.78
+        task_completed = rng.random() < success_probability
+        ease_score = min(5, max(1, round(rng.gauss(4.2 if selected_label == "B" else 3.6, 0.8))))
+        interaction_count = max(1, round(rng.gauss(5 if selected_label == "B" else 7, 2)))
+        feedback = rng.choice(spec["feedback"][selected_label]) if rng.random() < 0.72 else ""
+        db.add(Response(
+            experiment_id=experiment.id, selected_variation_id=selected.id,
+            anonymous_id=f"seed-{spec['template_key']}-{index + 1:03d}",
+            decision_latency_ms=latency, confidence_score=confidence,
+            task_completed=task_completed, ease_score=ease_score,
+            interaction_count=interaction_count,
+            qualitative_feedback=feedback, device_type=device, experience_level=experience,
+            age_range=rng.choice(age_ranges),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=count - index),
+        ))
+
+
+def seed_database(db: Session) -> None:
+    for seed, spec in enumerate(STUDIES, start=42):
+        experiment = upsert_study(db, spec)
+        seed_responses(db, experiment, spec, seed)
     db.commit()

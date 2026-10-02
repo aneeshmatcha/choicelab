@@ -1,16 +1,17 @@
-import { BarChart3, FlaskConical, LayoutDashboard, LogOut, Settings } from "lucide-react";
+import { BarChart3, FlaskConical, LayoutDashboard, Library, LogOut, Route, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { Logo } from "./Logo";
 
 interface ShellProps {
   children: ReactNode;
-  active: "dashboard" | "experiment" | "reports" | "settings";
-  onNavigate: (view: "dashboard" | "experiment" | "reports" | "settings") => void;
+  active: "dashboard" | "experiment" | "experiments" | "program" | "reports" | "settings";
+  onNavigate: (view: "dashboard" | "experiment" | "experiments" | "program" | "reports" | "settings") => void;
   onLogout: () => void;
   workspaceLabel: string;
+  responseCount?: number;
 }
 
-export function Shell({ children, active, onNavigate, onLogout, workspaceLabel }: ShellProps) {
+export function Shell({ children, active, onNavigate, onLogout, workspaceLabel, responseCount = 0 }: ShellProps) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -18,6 +19,12 @@ export function Shell({ children, active, onNavigate, onLogout, workspaceLabel }
         <nav>
           <button className={active === "dashboard" ? "active" : ""} onClick={() => onNavigate("dashboard")}>
             <LayoutDashboard size={19} /> Overview
+          </button>
+          <button className={active === "experiments" ? "active" : ""} onClick={() => onNavigate("experiments")}>
+            <Library size={19} /> Experiments
+          </button>
+          <button className={active === "program" ? "active" : ""} onClick={() => onNavigate("program")}>
+            <Route size={19} /> Research program
           </button>
           <button className={active === "experiment" ? "active" : ""} onClick={() => onNavigate("experiment")}>
             <FlaskConical size={19} /> Live experiment
@@ -27,7 +34,7 @@ export function Shell({ children, active, onNavigate, onLogout, workspaceLabel }
         </nav>
         <div className="sidebar-note">
           <span className="pulse" /> {workspaceLabel || "ChoiceLab workspace"}
-          <strong>180 responses seeded</strong>
+          <strong>{responseCount} research responses</strong>
         </div>
         <button className="sidebar-logout" onClick={onLogout}><LogOut size={16} /> Sign out</button>
       </aside>
